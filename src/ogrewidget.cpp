@@ -7,6 +7,7 @@
     #include <iostream>
     #include <cstring>
 #include <gdk/gdkx.h>
+#include <OGRE/OgreConfigFile.h>
  
     #ifdef WIN32
        #include <gdk/gdkwin32.h>
@@ -20,6 +21,7 @@
     	set_has_window(false);
       set_redraw_on_allocate(false);
       std::cout << "GType name: " << G_OBJECT_TYPE_NAME(gobj()) << std::endl;
+      this->set_size_request(800, 600);
     }
  
     OgreWidget::~OgreWidget()
@@ -28,10 +30,12 @@
  
     void OgreWidget::on_size_request(Gtk::Requisition* requisition)
     {
+
       *requisition = Gtk::Requisition();
  
       requisition->width = 800;
       requisition->height = 600;
+
     }
  
     void OgreWidget::on_size_allocate(Gtk::Allocation& allocation)
@@ -64,6 +68,43 @@
       Gtk::Widget::on_unmap();
     }
  
+    void setupResources(void)
+        {
+            // Load resource paths from config file
+    	Ogre::ConfigFile cf;
+    #if OGRE_DEBUG_MODE
+            cf.load("resources_d.cfg");
+    #else
+    		cf.load("resources.cfg");
+    #endif
+
+            // Go through all sections & settings in the file
+    		Ogre::ConfigFile::SectionIterator seci = cf.getSectionIterator();
+
+    		Ogre::String secName, typeName, archName;
+            while (seci.hasMoreElements())
+            {
+                secName = seci.peekNextKey();
+                Ogre::ConfigFile::SettingsMultiMap *settings = seci.getNext();
+                Ogre::ConfigFile::SettingsMultiMap::iterator i;
+                for (i = settings->begin(); i != settings->end(); ++i)
+                {
+                    typeName = i->first;
+                    archName = i->second;
+    #if OGRE_PLATFORM == OGRE_PLATFORM_APPLE || OGRE_PLATFORM == OGRE_PLATFORM_APPLE_IOS
+                    // OS X does not set the working directory relative to the app,
+                    // In order to make things portable on OS X we need to provide
+                    // the loading with it's own bundle path location
+    				if (!StringUtil::startsWith(archName, "/", false)) // only adjust relative dirs
+    					archName = String(macBundlePath() + "/" + archName);
+    #endif
+    				Ogre::ResourceGroupManager::getSingleton().addResourceLocation(
+                        archName, typeName, secName);
+
+                }
+            }
+        }
+
     void OgreWidget::on_realize()
     {
        //Call base class:
@@ -125,6 +166,9 @@
          mRefGdkWindow->set_user_data(gobj());
          //mRefGdkWindow->set_back_pixmap(Glib::RefPtr<Gdk::Pixmap>(),false);
  
+         setupResources();
+         Ogre::ResourceGroupManager::getSingleton().initialiseAllResourceGroups();
+
           createScene();     
  
           // Start idle function for frame update/rendering
@@ -175,7 +219,15 @@
         mViewport = mRenderWindow->addViewport(mCamera);
  
         // Alter the camera aspect ratio to match the viewport
-        mCamera->setAspectRatio(Ogre::Real(mViewport->getActualWidth()) / Ogre::Real(mViewport->getActualHeight()));           
+        mCamera->setAspectRatio(Ogre::Real(mViewport->getActualWidth()) / Ogre::Real(mViewport->getActualHeight()));
+
+        mSceneMgr->setAmbientLight(Ogre::ColourValue(0.5, 0.5, 0.5));
+        Ogre::Entity* ogreEntity = mSceneMgr->createEntity("robot.mesh");
+        Ogre::SceneNode* ogreNode = mSceneMgr->getRootSceneNode()->createChildSceneNode();
+        ogreNode->attachObject(ogreEntity);
+        Ogre::Light* light = mSceneMgr->createLight("MainLight");
+        light->setPosition(20, 80, 50);
+        mViewport->setBackgroundColour (Ogre::ColourValue(0, 1, 0));
     }
  
     bool OgreWidget::on_motion_notify_event(GdkEventMotion *event) {
